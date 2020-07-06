@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `event_name` argument for `LRScheduler` for optional recording of LR changes inside `net.history`. NOTE: Supported only in Pytorch>=1.4
 - Make it easier to add custom modules or optimizers to a neural net class by automatically registering them where necessary and by making them available to set_params
 - Added the `step_every` argument for `LRScheduler` to set whether the scheduler step should be taken on every epoch or on every batch.
+- Added a notebook that shows how to use a pretrained BERT in skorch with the help of torchtext and huggingface transformers
 
 ### Changed
 
