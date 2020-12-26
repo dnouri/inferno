@@ -105,24 +105,20 @@ dictionary. Below, there is example code on how to achieve this:
     X['sample_weight'] = sample_weight
 
     class MyModule(nn.Module):
-        ...
-        def forward(self, data, sample_weight):
-            # when X is a dict, its keys are passed as kwargs to forward, thus
-            # our forward has to have the arguments 'data' and 'sample_weight';
-            # usually, sample_weight can be ignored here
-            ...
+        ...  # normal PyTorch module
 
     class MyNet(NeuralNet):
-        def __init__(self, *args, criterion__reduce=False, **kwargs):
-            # make sure to set reduce=False in your criterion, since we need the loss
-            # for each sample so that it can be weighted
-            super().__init__(*args, criterion__reduce=criterion__reduce, **kwargs)
+        def __init__(self, *args, **kwargs):
+            # make sure to set reduce=False in your criterion
+            # (since we need the loss for each sample so that it can be weighted)
+            super().__init__(*args, criterion__reduce=False, **kwargs)
 
         def get_loss(self, y_pred, y_true, X, *args, **kwargs):
-            # override get_loss to use the sample_weight from X
-            loss_unreduced = super().get_loss(y_pred, y_true, X, *args, **kwargs)
-            sample_weight = X['sample_weight']
-            loss_reduced = (sample_weight * loss_unreduced).mean()
+            # Pass the data to get unnormalized loss
+            loss_unreduced = super().get_loss(y_pred, y_true, X["data"], *args, **kwargs)
+
+            # Reweight the loss with sample_weight
+            loss_reduced = (X["sample_weight"] * loss_unreduced).mean()
             return loss_reduced
 
     net = MyNet(MyModule, ...)
