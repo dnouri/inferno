@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `SacredLogger` callback for logging to Sacred (#725)
 - CLI helper function now also supports normal (i.e. non-skorch) sklearn estimators
-- Disabling all callbacks is now supported (which allows reducing overhead,
-  which is especially relevant for small models).
+- Disabling all callbacks is now supported (which allows reducing overhead, which is especially relevant for small models)
+- Add an example of using skorch with [optuna](https://nbviewer.jupyter.org/github/skorch-dev/skorch/blob/master/notebooks/optuna-example.ipynb) (#718)
 
 ### Changed
 
