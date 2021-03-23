@@ -12,7 +12,7 @@ Call like this:
 
 ```
 python examples/benchmarks/mnist.py
-python examples/benchmarks/mnist.py --device cpu --num_samples 5000
+python examples/benchmarks/mnist.py --device cuda --num_samples 5000 --amp_enabled true
 ```
 
 When called the first time, this will download MNIST data to
@@ -25,7 +25,6 @@ https://github.com/keras-team/keras/blob/0de2adf04b37aa972c955e69caf6917372b70a5
 """
 
 import argparse
-import os
 import time
 
 import numpy as np
@@ -34,11 +33,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.utils import shuffle
+import torch
+from torch import nn
+
 from skorch.utils import to_device
 from skorch import NeuralNetClassifier
 from skorch.callbacks import EpochScoring
-import torch
-from torch import nn
 
 
 BATCH_SIZE = 128
@@ -95,6 +95,7 @@ def performance_skorch(
         device,
         lr,
         max_epochs,
+        amp_enabled=False,
 ):
     torch.manual_seed(0)
     net = NeuralNetClassifier(
@@ -104,6 +105,7 @@ def performance_skorch(
         lr=lr,
         device=device,
         max_epochs=max_epochs,
+        amp_enabled=amp_enabled,
         callbacks=[
             ('tr_acc', EpochScoring(
                 'accuracy',
@@ -141,6 +143,7 @@ def train_torch(
         device,
         lr,
         max_epochs,
+        amp_enabled=False,
 ):
     model = to_device(model, device)
 
@@ -168,6 +171,7 @@ def train_torch(
             device=device,
             criterion=criterion,
             optimizer=optimizer,
+            amp_enabled=amp_enabled,
         )
         report(y=y_train, epoch=epoch, training=True, **train_out)
 
@@ -177,6 +181,7 @@ def train_torch(
             batch_size=batch_size,
             device=device,
             criterion=criterion,
+            amp_enabled=amp_enabled,
         )
         report(y=y_valid, epoch=epoch, training=False, **valid_out)
 
@@ -185,20 +190,29 @@ def train_torch(
     return model
 
 
-def train_step(model, dataset, device, criterion, batch_size, optimizer):
+def train_step(model, dataset, device, criterion, batch_size, optimizer, amp_enabled=False):
     model.train()
     y_preds = []
     losses = []
     batch_sizes = []
     tic = time.time()
+    scaler = None if not amp_enabled else torch.cuda.amp.GradScaler()
+
     for Xi, yi in torch.utils.data.DataLoader(dataset, batch_size=batch_size):
         Xi, yi = to_device(Xi, device), to_device(yi, device)
         optimizer.zero_grad()
-        y_pred = model(Xi)
-        y_pred = torch.log(y_pred)
-        loss = criterion(y_pred, yi)
-        loss.backward()
-        optimizer.step()
+        with torch.cuda.amp.autocast(enabled=amp_enabled):
+            y_pred = model(Xi)
+            y_pred = torch.log(y_pred)
+            loss = criterion(y_pred, yi)
+
+        if not amp_enabled:
+            loss.backward()
+            optimizer.step()
+        else:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
         y_preds.append(y_pred)
         losses.append(loss.item())
@@ -212,7 +226,7 @@ def train_step(model, dataset, device, criterion, batch_size, optimizer):
     }
 
 
-def valid_step(model, dataset, device, criterion, batch_size):
+def valid_step(model, dataset, device, criterion, batch_size, amp_enabled=False):
     model.eval()
     y_preds = []
     losses = []
@@ -223,9 +237,10 @@ def valid_step(model, dataset, device, criterion, batch_size):
                 dataset, batch_size=batch_size,
         ):
             Xi, yi = to_device(Xi, device), to_device(yi, device)
-            y_pred = model(Xi)
-            y_pred = torch.log(y_pred)
-            loss = criterion(y_pred, yi)
+            with torch.cuda.amp.autocast(enabled=amp_enabled):
+                y_pred = model(Xi)
+                y_pred = torch.log(y_pred)
+                loss = criterion(y_pred, yi)
 
             y_preds.append(y_pred)
             loss = loss.item()
@@ -249,6 +264,7 @@ def performance_torch(
         device,
         lr,
         max_epochs,
+        amp_enabled=False,
 ):
     torch.manual_seed(0)
     model = ClassifierModule()
@@ -262,6 +278,7 @@ def performance_torch(
         device=device,
         max_epochs=max_epochs,
         lr=0.1,
+        amp_enabled=True,
     )
 
     X_test = torch.tensor(X_test).to(device)
@@ -270,7 +287,7 @@ def performance_torch(
     return accuracy_score(y_test, y_pred)
 
 
-def main(device, num_samples):
+def main(device, num_samples, amp_enabled):
     data = get_data(num_samples)
     # trigger potential cuda call overhead
     torch.zeros(1).to(device)
@@ -284,6 +301,7 @@ def main(device, num_samples):
             max_epochs=MAX_EPOCHS,
             lr=LEARNING_RATE,
             device=device,
+            amp_enabled=amp_enabled,
         )
         time_skorch = time.time() - tic
 
@@ -296,6 +314,7 @@ def main(device, num_samples):
             max_epochs=MAX_EPOCHS,
             lr=LEARNING_RATE,
             device=device,
+            amp_enabled=amp_enabled,
         )
         time_torch = time.time() - tic
 
@@ -314,5 +333,7 @@ if __name__ == '__main__':
                         help='device (e.g. "cuda", "cpu")')
     parser.add_argument('--num_samples', type=int, default=20000,
                         help='total number of samples to use')
+    parser.add_argument('--amp_enabled', type=bool, default=False,
+                        help='whether to enable automatic mixed precision')
     args = parser.parse_args()
-    main(device=args.device, num_samples=args.num_samples)
+    main(device=args.device, num_samples=args.num_samples, amp_enabled=args.amp_enabled)

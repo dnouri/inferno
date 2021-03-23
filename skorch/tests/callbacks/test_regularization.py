@@ -1,3 +1,6 @@
+"""TODO"""
+
+from unittest.mock import Mock
 from unittest.mock import patch
 
 import numpy as np
@@ -13,15 +16,19 @@ class TestGradientNormClipping:
             from skorch.callbacks import GradientNormClipping
             yield GradientNormClipping, cgn
 
+    @pytest.fixture
+    def net_mock(self):
+        return Mock(amp_enabled=False)
+
     def test_parameters_passed_correctly_to_torch_cgn(
-            self, grad_clip_cls_and_mock):
+            self, grad_clip_cls_and_mock, net_mock):
         grad_norm_clip_cls, cgn = grad_clip_cls_and_mock
 
         clipping = grad_norm_clip_cls(
             gradient_clip_value=55, gradient_clip_norm_type=99)
         named_parameters = [('p1', 1), ('p2', 2), ('p3', 3)]
         parameter_values = [p for _, p in named_parameters]
-        clipping.on_grad_computed(None, named_parameters=named_parameters)
+        clipping.on_grad_computed(net_mock, named_parameters=named_parameters)
 
         # Clip norm must receive values, not (name, value) pairs.
         assert list(cgn.call_args_list[0][0][0]) == parameter_values
@@ -49,3 +56,7 @@ class TestGradientNormClipping:
         for p0, p1 in zip(params_before, params_after):
             p0, p1 = to_numpy(p0), to_numpy(p1)
             assert np.allclose(p0, p1)
+
+    def test_with_amp_enabled(self):
+        # TODO
+        pass

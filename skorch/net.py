@@ -31,6 +31,7 @@ from skorch.utils import check_is_fitted
 from skorch.utils import duplicate_items
 from skorch.utils import get_map_location
 from skorch.utils import is_dataset
+from skorch.utils import no_context
 from skorch.utils import params_for
 from skorch.utils import to_device
 from skorch.utils import to_numpy
@@ -237,11 +238,15 @@ class NeuralNet:
       The complete (i.e. default and other), initialized callbacks, in
       a tuple with unique names.
 
+    amp_enabled TODO
+
+    grad_scaler TODO
+
     """
     prefixes_ = ['module', 'iterator_train', 'iterator_valid', 'optimizer',
-                 'criterion', 'callbacks', 'dataset']
+                 'criterion', 'callbacks', 'dataset', 'grad_scaler']
 
-    cuda_dependent_attributes_ = ['module_', 'optimizer_', 'criterion_']
+    cuda_dependent_attributes_ = ['module_', 'optimizer_', 'criterion_', 'grad_scaler_']
 
     # pylint: disable=too-many-arguments
     def __init__(
@@ -261,6 +266,8 @@ class NeuralNet:
             warm_start=False,
             verbose=1,
             device='cpu',
+            amp_enabled=False,
+            grad_scaler=None,
             **kwargs
     ):
         self.module = module
@@ -278,6 +285,8 @@ class NeuralNet:
         self.warm_start = warm_start
         self.verbose = verbose
         self.device = device
+        self.amp_enabled = amp_enabled
+        self.grad_scaler = grad_scaler
 
         self._check_deprecated_params(**kwargs)
         history = kwargs.pop('history', None)
@@ -589,6 +598,16 @@ class NeuralNet:
         """Initializes the history."""
         self.history_ = History()
 
+    def initialize_grad_scaler(self):
+        if not self.amp_enabled:
+            self.grad_scaler_ = None
+            return self
+
+        kwargs = self.get_params_for('grad_scaler')
+        grad_scaler = self.grad_scaler if self.grad_scaler else torch.cuda.amp.GradScaler
+        self.grad_scaler_ = grad_scaler(**kwargs)
+        return self
+
     def initialize(self):
         """Initializes all components of the :class:`.NeuralNet` and
         returns self.
@@ -600,6 +619,7 @@ class NeuralNet:
         self.initialize_module()
         self.initialize_optimizer()
         self.initialize_history()
+        self.initialize_grad_scaler()
 
         self.initialized_ = True
         return self
@@ -720,7 +740,13 @@ class NeuralNet:
             step_accumulator.store_step(step)
             return step['loss']
 
-        self.optimizer_.step(step_fn)
+        if not self.amp_enabled:
+            self.optimizer_.step(step_fn)
+        else:
+            step_fn()  # closure not (yet) supported with AMP
+            self.grad_scaler_.step(self.optimizer_)
+            self.grad_scaler_.update()
+
         return step_accumulator.get_step()
 
     def evaluation_step(self, Xi, training=False):
@@ -1031,6 +1057,11 @@ class NeuralNet:
             return tuple(map(torch.cat, zip(*y_infer)))
         return torch.cat(y_infer)
 
+    @property
+    def autocast(self):
+        """TODO"""
+        return torch.cuda.amp.autocast if self.amp_enabled else no_context
+
     def _merge_x_and_fit_params(self, x, fit_params):
         duplicates = duplicate_items(x, fit_params)
         if duplicates:
@@ -1059,7 +1090,8 @@ class NeuralNet:
         if isinstance(x, dict):
             x_dict = self._merge_x_and_fit_params(x, fit_params)
             return self.module_(**x_dict)
-        return self.module_(x, **fit_params)
+        with self.autocast():
+            return self.module_(x, **fit_params)
 
     def _get_predict_nonlinearity(self):
         """Return the nonlinearity to be applied to the prediction
@@ -1207,7 +1239,9 @@ class NeuralNet:
         if isinstance(self.criterion_, torch.nn.Module):
             self.criterion_.train(training)
 
-        return self.criterion_(y_pred, y_true)
+        with self.autocast():
+            loss = self.criterion_(y_pred, y_true)
+        return self.grad_scaler_.scale(loss) if self.amp_enabled else loss
 
     def get_dataset(self, X, y=None):
         """Get a dataset that contains the input data and is passed to
@@ -1693,8 +1727,9 @@ class NeuralNet:
         state = self.__dict__.copy()
         cuda_attrs = {}
         for prefix in self.cuda_dependent_attributes_:
-            for key in state:
-                if isinstance(key, str) and key.startswith(prefix):
+            for key, val in state.items():
+                key_matches = isinstance(key, str) and key.startswith(prefix)
+                if key_matches and (val is not None):
                     cuda_attrs[key] = state[key]
 
         for k in cuda_attrs:
@@ -1847,6 +1882,7 @@ class NeuralNet:
             f_optimizer=None,
             f_criterion=None,
             f_history=None,
+            f_grad_scaler=None,
             **kwargs):
         """Saves the module's parameters, history, and optimizer,
         not the whole object.
@@ -1876,6 +1912,8 @@ class NeuralNet:
         f_history : file-like object, str, None (default=None)
           Path to history. Pass ``None`` to not save
 
+        f_grad_scaler TODO
+
         Examples
         --------
         >>> before = NeuralNetClassifier(mymodule)
@@ -1894,6 +1932,7 @@ class NeuralNet:
             f_optimizer=f_optimizer,
             f_criterion=f_criterion,
             f_history=f_history,
+            f_grad_scaler=f_grad_scaler,
             **kwargs)
 
         if not kwargs_module and not kwargs_other:
@@ -1944,6 +1983,7 @@ class NeuralNet:
             f_optimizer=None,
             f_criterion=None,
             f_history=None,
+            f_grad_scaler=None,
             checkpoint=None,
             **kwargs):
         """Loads the the module's parameters, history, and optimizer,

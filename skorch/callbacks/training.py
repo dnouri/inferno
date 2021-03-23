@@ -104,6 +104,8 @@ class Checkpoint(Callback):
 
       Supports the same format specifiers as ``f_params``.
 
+    f_grad_scaler TODO
+
     f_history : file-like object, str, None (default='history.json')
       File path to the file or file-like object where the model
       training history should be saved. Pass ``None`` to disable
@@ -139,6 +141,7 @@ class Checkpoint(Callback):
             f_params='params.pt',
             f_optimizer='optimizer.pt',
             f_criterion='criterion.pt',
+            f_grad_scaler=None,
             f_history='history.json',
             f_pickle=None,
             fn_prefix='',
@@ -151,6 +154,7 @@ class Checkpoint(Callback):
         self.f_params = f_params
         self.f_optimizer = f_optimizer
         self.f_criterion = f_criterion
+        self.f_grad_scaler = f_grad_scaler
         self.f_history = f_history
         self.f_pickle = f_pickle
         self.fn_prefix = fn_prefix
@@ -216,6 +220,7 @@ class Checkpoint(Callback):
           - optimizer state;
           - criterion state;
           - training history;
+          - grad scaler, if any;
           - custom modules;
           - entire model object.
 
@@ -670,6 +675,8 @@ class TrainEndCheckpoint(Callback):
 
       Supports the same format specifiers as ``f_params``.
 
+    f_grad_scaler TODO
+
     f_history : file-like object, str, None (default='history.json')
       File path to the file or file-like object where the model
       training history should be saved. Pass ``None`` to disable
@@ -700,6 +707,7 @@ class TrainEndCheckpoint(Callback):
             f_params='params.pt',
             f_optimizer='optimizer.pt',
             f_criterion='criterion.pt',
+            f_grad_scaler=None,
             f_history='history.json',
             f_pickle=None,
             fn_prefix='train_end_',
@@ -710,6 +718,7 @@ class TrainEndCheckpoint(Callback):
         self.f_params = f_params
         self.f_optimizer = f_optimizer
         self.f_criterion = f_criterion
+        self.f_grad_scaler = f_grad_scaler
         self.f_history = f_history
         self.f_pickle = f_pickle
         self.fn_prefix = fn_prefix

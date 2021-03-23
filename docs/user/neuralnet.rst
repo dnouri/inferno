@@ -293,6 +293,11 @@ CUDA before being passed to the PyTorch :class:`~torch.nn.Module`. The
 device parameter adheres to the general syntax of the PyTorch device
 parameter.
 
+amp_enabled and grad_scaler
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+TODO
+
 initialize()
 ^^^^^^^^^^^^
 

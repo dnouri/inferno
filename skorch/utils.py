@@ -675,3 +675,34 @@ def _check_f_arguments(caller_name, **kwargs):
             key = 'module_' if key == 'f_params' else key[2:] + '_'
             kwargs_module[key] = val
     return kwargs_module, kwargs_other
+
+
+@contextmanager
+def no_context(*args, **kwargs):
+    """TODO"""
+    yield
+
+
+def _unscale_optimizer_grads(grad_scaler, optimizer):
+    """Unscale optimizer gradient, if not already unscaled.
+
+    Only call this if ``net.amp_enabled`` is true.
+
+    It is necessary to check if the optimizer is unscaled, because
+    otherwise, PyTorch will throw a runtime error. Unfortunately, we
+    cannot catch the runtime error, because it is also raised if
+    ``optimizer.step()`` was already called, in which case we actually
+    want the error to be raised.
+
+    """
+    from torch.cuda.amp.grad_scaler import OptState
+
+    # Unfortunately, there is no public PyTorch API for checking the
+    # optimizer state.
+    # pylint: disable=protected-access
+    optimizer_state = grad_scaler._per_optimizer_states[id(optimizer)]
+    is_unscaled = optimizer_state['stage'] is OptState.UNSCALED
+    if not is_unscaled:
+        return
+
+    grad_scaler.unscale_(optimizer)

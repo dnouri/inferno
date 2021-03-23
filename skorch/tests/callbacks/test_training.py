@@ -213,6 +213,7 @@ class TestCheckpoint:
             'f_params': 'model_3_10.pt',
             'f_optimizer': 'optimizer_3_10.pt',
             'f_criterion': 'criterion_3_10.pt',
+            'f_grad_scaler': None,
             'f_history': 'history.json',
             'f_pickle': None
         }
