@@ -34,6 +34,7 @@ def loss_scoring(net, X, y=None, sample_weight=None):
           * a dictionary of the former three
           * a list/tuple of the former three
           * a Dataset
+
         If this doesn't work with your data, you have to pass a
         ``Dataset`` that can deal with the data.
 

@@ -12,6 +12,10 @@ class NotInitializedError(SkorchException):
     """
 
 
+class SkorchAttributeError(SkorchException):
+    """An attribute was set incorrectly on a skorch net."""
+
+
 class SkorchWarning(UserWarning):
     """Base skorch warning."""
 
