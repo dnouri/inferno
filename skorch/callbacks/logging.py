@@ -16,7 +16,7 @@ from skorch.dataset import get_len
 from skorch.callbacks import Callback
 
 __all__ = ['EpochTimer', 'NeptuneLogger', 'WandbLogger', 'PrintLog', 'ProgressBar',
-           'TensorBoard', 'SacredLogger']
+           'TensorBoard', 'SacredLogger', 'MLflow']
 
 
 def filter_log_keys(keys, keys_ignored=None):
@@ -875,3 +875,70 @@ class SacredLogger(Callback):
 
         for key in filter_log_keys(epoch_logs.keys(), self.keys_ignored_):
             self.experiment.log_scalar(key + self.epoch_suffix_, epoch_logs[key], epoch)
+
+
+class MLflow(Callback):
+    """
+    >>> import mlflow
+    >>> net = NeuralNetClassifier(net, callbacks=[MLflow])
+    >>> with mlflow.start_run():
+    ...     net.fit(X, y)
+    """
+    def __init__(
+        self,
+        log_on_batch_end=False,
+        log_on_epoch_end=True,
+        keys_ignored=[],
+        create_artifact=True,
+        logged_parameters=["lr", "batch_size"],
+    ):
+        import mlflow
+        self.mlflow = mlflow
+        self.log_on_batch_end = log_on_batch_end
+        self.log_on_epoch_end = log_on_epoch_end
+        self.logged_parameters = logged_parameters
+        self.create_artifact = create_artifact
+        self.keys_ignored = keys_ignored
+
+    def initialize(self):
+        keys_ignored = self.keys_ignored
+        if isinstance(keys_ignored, str):
+            keys_ignored = [keys_ignored]
+        self.keys_ignored_ = set(keys_ignored or [])
+        self.keys_ignored_.add("batches")
+
+    def on_train_begin(self, net, **kwargs):
+        for parameter in self.logged_parameters:
+            self.mlflow.log_param(parameter, getattr(net, parameter))
+
+    def on_batch_end(self, net, **kwargs):
+        if not self.log_on_batch_end:
+            return
+        batch_logs = net.history[-1]["batches"][-1]
+        for key in filter_log_keys(batch_logs.keys(), self.keys_ignored_):
+            self.mlflow.log_metric("batch_" + key, batch_logs[key])
+
+    def on_epoch_end(self, net, **kwargs):
+        if not self.log_on_epoch_end:
+            return
+        epoch_logs = net.history[-1]
+        for key in filter_log_keys(epoch_logs.keys(), self.keys_ignored_):
+            self.mlflow.log_metric("epoch_" + key, epoch_logs[key])
+
+    def on_train_end(self, net, **kwargs):
+        if not self.create_artifact:
+            return
+        params_filename = "params.pkl"
+        optimizer_filename = "optimizer.pkl"
+        criterion_filename = "criterion.pkl"
+        history_filename = "history.json"
+        net.save_params(
+            f_params=params_filename,
+            f_optimizer=optimizer_filename,
+            f_criterion=criterion_filename,
+            f_history=history_filename,
+        )
+        self.mlflow.log_artifact(params_filename)
+        self.mlflow.log_artifact(optimizer_filename)
+        self.mlflow.log_artifact(criterion_filename)
+        self.mlflow.log_artifact(history_filename)

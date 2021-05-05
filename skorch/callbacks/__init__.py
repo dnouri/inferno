@@ -37,4 +37,5 @@ __all__ = [
     'Unfreezer',
     'WandbLogger',
     'WarmRestartLR',
+    'MLflow',
 ]
